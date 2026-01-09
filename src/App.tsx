@@ -224,7 +224,7 @@ export default function App() {
   const [systemLoad, setSystemLoad] = useState(15);
   const [wifiEnabled, setWifiEnabled] = useState(navigator.onLine);
   const [batteryLevel, setBatteryLevel] = useState(100);
-  const [voiceMode] = useState(false);
+  const voiceMode = false;
   const [isTilingMode, setIsTilingMode] = useState(false);
 
   // --- FEATURE STATES ---
@@ -390,7 +390,12 @@ export default function App() {
   };
 
   // Search/Dev
-  const handleSearch = async () => { if (!searchQuery) return; await callGeminiText("Generate search results", `User: ${searchQuery}`); setSearchQuery(""); };
+  const handleSearch = async () => { 
+    if (!searchQuery) return;
+    // TODO: Implement search results display 
+    // const res = await callGeminiText("Generate search results", `User: ${searchQuery}`);
+    setSearchQuery(""); 
+  };
   const handleAnalyzeRepo = async () => { setIsAnalyzingRepo(true); const res = await callGeminiText(`Analyze ${activeRepo.name}`, "Senior Engineer."); setRepoAnalysis(res); setIsAnalyzingRepo(false); };
   const handleCreatePR = async () => { setIsDraftingPr(true); const res = await callGeminiText(`PR for ${prFeature} in ${activeRepo.name}`, "Engineer."); setPrDraft(res); setIsDraftingPr(false); };
   const handleSimulateNotification = () => { const raw = MOCK_NOTIFICATIONS[Math.floor(Math.random()*MOCK_NOTIFICATIONS.length)]; setNotifications(p => [{...raw, id: Date.now().toString(), timestamp: new Date().toISOString(), processed: false}, ...p]); };
