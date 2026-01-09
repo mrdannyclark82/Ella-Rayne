@@ -38,3 +38,22 @@ lerna-debug.log*
 # Vite
 *.local
 vite.config.ts.timestamp-*
+
+# Capacitor
+.capacitor
+*.orig
+
+# Android
+android/build/
+android/.gradle/
+android/app/build/
+android/app/release/
+android/gradle/
+android/gradlew
+android/gradlew.bat
+android/local.properties
+android/.idea/
+android/*.iml
+android/captures/
+android/.externalNativeBuild
+android/.cxx/
