@@ -5,42 +5,22 @@ import { getFirestore, doc, setDoc, onSnapshot } from 'firebase/firestore';
 import { 
   Terminal, 
   MessageSquare, 
-  Cpu, 
   Cloud, 
   Battery, 
   Settings, 
   Bell, 
-  Shield, 
   Search,
   Grid,
   Wifi,
-  Zap,
-  CheckCircle2,
-  Activity,
-  Send,
   Sparkles,
-  Volume2,
-  VolumeX,
-  Trash2,
   WifiOff,
-  Image as ImageIcon,
-  Paintbrush,
   Loader2,
-  Reply,
   FileCode,
-  FolderOpen,
-  Plus,
-  Save,
-  X,
-  AlertTriangle,
   Eye,
   Scan,
   Upload,
-  Music,
   Disc,
   Play,
-  Mic,
-  HardDrive,
   Lock,
   LogOut,
   Fingerprint,
@@ -48,11 +28,8 @@ import {
   Github,
   Code,
   GitPullRequest,
-  PlayCircle,
-  PackagePlus,
-  SkipForward,
   LayoutDashboard,
-  FileText
+  RefreshCw
 } from 'lucide-react';
 
 // --- CONFIGURATION ---
@@ -134,12 +111,6 @@ interface MockRepo {
   name: string;
   language: string;
   stars: number;
-}
-
-interface SearchResult {
-  type: 'FILE' | 'CONTACT' | 'MAIL' | 'APP';
-  title: string;
-  subtitle: string;
 }
 
 // --- MOCK DATA ---
@@ -253,44 +224,29 @@ export default function App() {
   const [systemLoad, setSystemLoad] = useState(15);
   const [wifiEnabled, setWifiEnabled] = useState(navigator.onLine);
   const [batteryLevel, setBatteryLevel] = useState(100);
-  const [isCharging, setIsCharging] = useState(false);
-  const [voiceMode, setVoiceMode] = useState(false);
-  const [processingMode, setProcessingMode] = useState<ProcessingMode>('HYBRID');
-  const [isProcessing, setIsProcessing] = useState(false);
+  const [voiceMode] = useState(false);
   const [isTilingMode, setIsTilingMode] = useState(false);
 
   // --- FEATURE STATES ---
   const [terminalHistory, setTerminalHistory] = useState<TerminalLine[]>([{ type: 'output', content: 'Gemini Kernel v2.1 (Cloud-Linked)' }]);
   const [terminalInput, setTerminalInput] = useState("");
-  const [editorOpen, setEditorOpen] = useState(false);
-  const [activeFileId, setActiveFileId] = useState<string | null>(null);
-  const [editorContent, setEditorContent] = useState("");
-  const [editorFilename, setEditorFilename] = useState("");
-  const [isAiCoding, setIsAiCoding] = useState(false);
-  const [lintError, setLintError] = useState<string | null>(null);
   const [visionInput, setVisionInput] = useState<string | null>(null);
   const [visionAnalysis, setVisionAnalysis] = useState("");
   const [isVisionAnalyzing, setIsVisionAnalyzing] = useState(false);
   const [currentTrack, setCurrentTrack] = useState<MusicTrack | null>(null);
   const [isGeneratingMusic, setIsGeneratingMusic] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
-  const [isSearching, setIsSearching] = useState(false);
   const [activeRepo, setActiveRepo] = useState<MockRepo>(MOCK_REPOS[0]);
   const [repoAnalysis, setRepoAnalysis] = useState("");
   const [isAnalyzingRepo, setIsAnalyzingRepo] = useState(false);
   const [prFeature, setPrFeature] = useState("");
   const [prDraft, setPrDraft] = useState("");
   const [isDraftingPr, setIsDraftingPr] = useState(false);
-  const [workflowStatus, setWorkflowStatus] = useState<'IDLE' | 'RUNNING' | 'SUCCESS' | 'FAILED'>('IDLE');
   const [chatInput, setChatInput] = useState("");
-  const [isChatThinking, setIsChatThinking] = useState(false);
-  const [isListening, setIsListening] = useState(false);
   const [wallpaperPrompt, setWallpaperPrompt] = useState("");
   const [isGeneratingWallpaper, setIsGeneratingWallpaper] = useState(false);
   const [systemBriefing, setSystemBriefing] = useState("");
   const [isBriefingLoading, setIsBriefingLoading] = useState(false);
-  const [isScaffolding, setIsScaffolding] = useState(false);
 
   // Refs
   const terminalRef = useRef<HTMLDivElement>(null);
@@ -353,12 +309,6 @@ export default function App() {
   }, [user]);
 
   // --- SAVE HELPERS ---
-  const saveFilesToCloud = async (newFiles: VirtualFile[]) => {
-    if (!user) return;
-    setFiles(newFiles); // Optimistic update
-    await setDoc(doc(db, 'artifacts', APP_ID, 'users', user.uid, 'data', 'filesystem'), { files: newFiles }, { merge: true });
-  };
-
   const saveChatToCloud = async (newMessages: ChatMessage[]) => {
     if (!user) return;
     setChatMessages(newMessages);
@@ -381,7 +331,6 @@ export default function App() {
     if ('getBattery' in navigator) {
       (navigator as any).getBattery().then((battery: any) => {
         setBatteryLevel(Math.round(battery.level * 100));
-        setIsCharging(battery.charging);
       });
     }
     return () => clearInterval(timer);
@@ -393,7 +342,7 @@ export default function App() {
 
   // --- AUTH UI HANDLER ---
   // In a real app, this would trigger actual OAuth popup
-  const handleAuthTrigger = async (providerName: string) => {
+  const handleAuthTrigger = async () => {
     setAuthLoading(true);
     setTimeout(() => {
       setAuthLoading(false);
@@ -412,96 +361,6 @@ export default function App() {
 
   // --- FEATURE HANDLERS ---
   
-  // Chat / Agent
-  const handleSendMessage = async () => {
-    if (!chatInput.trim()) return;
-    const userMsg = chatInput;
-    setChatInput("");
-    
-    const newHistory = [...chatMessages, { role: 'user', text: userMsg } as ChatMessage];
-    saveChatToCloud(newHistory);
-    setIsChatThinking(true);
-
-    const notifContext = notifications.slice(0, 3).map(n => `[${n.app}] ${n.content}`).join(", ");
-    const systemState = `Wifi:${wifiEnabled}, Battery:${batteryLevel}%, Files:${files.length}`;
-    const systemPrompt = `You are the Gemini OS Kernel. State: ${systemState}. Notifs: ${notifContext}. TOOLS: [[CMD:LAUNCH:app]], [[CMD:WIFI:toggle]], [[CMD:CLEAR]]. Concise.`;
-    
-    const response = await callGeminiText(userMsg, systemPrompt);
-    let displayMsg = response;
-    let actionLog = null;
-    
-    const cmdRegex = /\[\[CMD:(.*?):?(.*?)\]\]/;
-    const match = response.match(cmdRegex);
-    if (match) {
-      const [fullTag, cmd, arg] = match;
-      displayMsg = response.replace(fullTag, '').trim();
-      if (cmd === 'LAUNCH') { const res = launchNativeApp(arg); actionLog = res.message; }
-      else if (cmd === 'WIFI') { setWifiEnabled(p => !p); actionLog = "Toggling Uplink..."; }
-      else if (cmd === 'CLEAR') { setNotifications([]); actionLog = "Buffer Cleared."; }
-    }
-
-    const finalHistory = [...newHistory, { role: 'model', text: displayMsg } as ChatMessage];
-    if (actionLog) finalHistory.push({ role: 'model', text: `>> ${actionLog}`, isSystemAction: true });
-    
-    saveChatToCloud(finalHistory);
-    setIsChatThinking(false);
-    if (voiceMode && displayMsg) callGeminiTTS(displayMsg);
-  };
-
-  // Files
-  const handleSmartSave = async () => {
-    const res = await callGeminiText(`Lint this code:\n${editorContent}`, "Return 'ERROR: <reason>' or the clean code.");
-    if (res.startsWith('ERROR')) { setLintError(res); return; }
-    
-    const clean = res.replace(/```[\s\S]*?\n/g, '').replace(/```/g, '').trim();
-    let newFiles = [...files];
-    
-    if (activeFileId) {
-      newFiles = newFiles.map(f => f.id === activeFileId ? { ...f, content: clean, name: editorFilename } : f);
-    } else {
-      newFiles.push({ id: Date.now().toString(), name: editorFilename, content: clean, language: 'plaintext' });
-    }
-    
-    await saveFilesToCloud(newFiles);
-    setEditorOpen(false);
-  };
-
-  const handleScaffold = async () => {
-    const goal = window.prompt("Project Idea?");
-    if (!goal) return;
-    setIsScaffolding(true);
-    const res = await callGeminiText(`Scaffold project: ${goal}. JSON array {name, content}.`, "Expert Dev.");
-    try {
-      const scaffoldFiles = JSON.parse(res.replace(/```json|```/g, '').trim());
-      const mapped = scaffoldFiles.map((f: any) => ({ id: Math.random().toString(), name: f.name, content: f.content, language: 'code' }));
-      await saveFilesToCloud([...mapped, ...files]);
-    } catch(e) { alert("Scaffold failed"); }
-    setIsScaffolding(false);
-  };
-
-  const handleOpenFile = (file: VirtualFile) => { setActiveFileId(file.id); setEditorFilename(file.name); setEditorContent(file.content); setEditorOpen(true); setLintError(null); };
-  const handleNewFile = () => { setActiveFileId(null); setEditorFilename("untitled.txt"); setEditorContent(""); setEditorOpen(true); setLintError(null); };
-  const handleAiCodeAssist = async () => { setIsAiCoding(true); const res = await callGeminiText(`Complete code:\n${editorContent}`, "Dev assistant. Return ONLY code."); setEditorContent(res.replace(/```[\s\S]*?\n/g, '').replace(/```/g, '')); setIsAiCoding(false); };
-
-  // Terminal
-  const handleTerminalCommand = async () => {
-    if (!terminalInput.trim()) return;
-    const cmd = terminalInput.trim();
-    setTerminalHistory(prev => [...prev, { type: 'input', content: cmd }]);
-    setTerminalInput("");
-    
-    const args = cmd.split(' ');
-    if (args[0] === 'ls') { setTerminalHistory(p => [...p, { type: 'output', content: files.map(f => f.name).join('  ') || '(empty)' }]); return; }
-    if (args[0] === 'open' || args[0] === 'launch') { 
-        const res = launchNativeApp(args[1]);
-        setTerminalHistory(p => [...p, { type: 'output', content: res.message }]);
-        return; 
-    }
-    
-    const response = await callGeminiText(`Simulate terminal output for: "${cmd}". Filesystem: ${files.map(f=>f.name).join(',')}`, "You are /bin/bash.");
-    setTerminalHistory(p => [...p, { type: 'output', content: response.replace(/```/g, '') }]);
-  };
-
   // System
   const handleGenerateWallpaper = async () => { 
     if (!wallpaperPrompt) return; 
@@ -529,13 +388,152 @@ export default function App() {
   };
 
   // Search/Dev
-  const handleSearch = async () => { if (!searchQuery) return; setIsSearching(true); const res = await callGeminiText("Generate search results JSON", `User: ${searchQuery}`); try { setSearchResults(JSON.parse(res.replace(/```json|```/g, '').trim())); } catch(e){} setIsSearching(false); };
+  const handleSearch = async () => { if (!searchQuery) return; await callGeminiText("Generate search results", `User: ${searchQuery}`); setSearchQuery(""); };
   const handleAnalyzeRepo = async () => { setIsAnalyzingRepo(true); const res = await callGeminiText(`Analyze ${activeRepo.name}`, "Senior Engineer."); setRepoAnalysis(res); setIsAnalyzingRepo(false); };
   const handleCreatePR = async () => { setIsDraftingPr(true); const res = await callGeminiText(`PR for ${prFeature} in ${activeRepo.name}`, "Engineer."); setPrDraft(res); setIsDraftingPr(false); };
-  const handleRunWorkflow = () => { setWorkflowStatus('RUNNING'); setTimeout(() => setWorkflowStatus('SUCCESS'), 3000); };
   const handleSimulateNotification = () => { const raw = MOCK_NOTIFICATIONS[Math.floor(Math.random()*MOCK_NOTIFICATIONS.length)]; setNotifications(p => [{...raw, id: Date.now().toString(), timestamp: new Date().toISOString(), processed: false}, ...p]); };
   const generateBriefing = async () => { setIsBriefingLoading(true); const res = await callGeminiText(`Stats: Load ${Math.round(systemLoad)}%`, "Greeting."); setSystemBriefing(res); setIsBriefingLoading(false); };
-  const toggleListening = () => { /* ... (impl same as before) ... */ };
+
+  // --- RENDER FUNCTIONS ---
+  const renderTerminalContent = () => (
+    <div className="flex flex-col h-full bg-black/90 backdrop-blur-xl p-4 pt-12">
+      <div className="flex-1 overflow-y-auto font-mono text-xs space-y-1 mb-4">
+        {terminalHistory.map((line, i) => (
+          <div key={i} className={line.type === 'input' ? 'text-emerald-400' : 'text-slate-300'}>
+            {line.type === 'input' ? '$ ' : ''}{line.content}
+          </div>
+        ))}
+        <div ref={terminalRef} />
+      </div>
+      <div className="flex gap-2">
+        <span className="text-emerald-400 font-mono text-xs">$</span>
+        <input
+          type="text"
+          value={terminalInput}
+          onChange={(e) => setTerminalInput(e.target.value)}
+          onKeyDown={async (e) => {
+            if (e.key === 'Enter') {
+              if (!terminalInput.trim()) return;
+              const cmd = terminalInput.trim();
+              setTerminalHistory(prev => [...prev, { type: 'input', content: cmd }]);
+              setTerminalInput("");
+              
+              const args = cmd.split(' ');
+              if (args[0] === 'ls') { 
+                setTerminalHistory(p => [...p, { type: 'output', content: files.map(f => f.name).join('  ') || '(empty)' }]); 
+                return; 
+              }
+              if (args[0] === 'open' || args[0] === 'launch') { 
+                const res = launchNativeApp(args[1]);
+                setTerminalHistory(p => [...p, { type: 'output', content: res.message }]);
+                return; 
+              }
+              
+              const response = await callGeminiText(`Simulate terminal output for: "${cmd}". Filesystem: ${files.map(f=>f.name).join(',')}`, "You are /bin/bash.");
+              setTerminalHistory(p => [...p, { type: 'output', content: response.replace(/```/g, '') }]);
+            }
+          }}
+          className="flex-1 bg-transparent border-none outline-none text-white font-mono text-xs"
+          placeholder="Enter command..."
+          autoFocus
+        />
+      </div>
+    </div>
+  );
+
+  const renderFilesContent = () => (
+    <div className="flex flex-col h-full bg-black/90 backdrop-blur-xl p-4 pt-12">
+      <h2 className="text-xl font-light text-white mb-4 flex items-center gap-2">
+        <FileCode size={20} />
+        Files
+      </h2>
+      <div className="flex-1 overflow-y-auto space-y-2">
+        {files.length === 0 ? (
+          <div className="text-center text-slate-500 text-sm mt-8">No files yet</div>
+        ) : (
+          files.map(file => (
+            <div 
+              key={file.id}
+              className="bg-white/5 border border-white/10 rounded-lg p-3 hover:bg-white/10 transition-colors cursor-pointer"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex-1 min-w-0">
+                  <h4 className="text-sm font-medium text-white truncate">{file.name}</h4>
+                  <p className="text-xs text-slate-400 truncate">{file.language}</p>
+                </div>
+              </div>
+            </div>
+          ))
+        )}
+      </div>
+    </div>
+  );
+
+  const renderChatContent = () => (
+    <div className="flex flex-col h-full bg-black/90 backdrop-blur-xl">
+      <div className="flex-1 overflow-y-auto p-4 space-y-3">
+        {chatMessages.map((msg, i) => (
+          <div key={i} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            <div className={`max-w-[80%] rounded-2xl px-4 py-2 ${
+              msg.role === 'user' 
+                ? 'bg-purple-600 text-white' 
+                : msg.isSystemAction
+                ? 'bg-emerald-900/30 text-emerald-300 text-xs font-mono border border-emerald-500/30'
+                : 'bg-white/10 text-slate-200'
+            }`}>
+              {msg.text}
+            </div>
+          </div>
+        ))}
+        <div ref={chatEndRef} />
+      </div>
+      <div className="p-4 border-t border-white/10">
+        <div className="flex gap-2">
+          <input
+            type="text"
+            value={chatInput}
+            onChange={(e) => setChatInput(e.target.value)}
+            onKeyDown={async (e) => {
+              if (e.key === 'Enter') {
+                if (!chatInput.trim()) return;
+                const userMsg = chatInput;
+                setChatInput("");
+                
+                const newHistory = [...chatMessages, { role: 'user', text: userMsg } as ChatMessage];
+                saveChatToCloud(newHistory);
+
+                const notifContext = notifications.slice(0, 3).map(n => `[${n.app}] ${n.content}`).join(", ");
+                const systemState = `Wifi:${wifiEnabled}, Battery:${batteryLevel}%, Files:${files.length}`;
+                const systemPrompt = `You are the Gemini OS Kernel. State: ${systemState}. Notifs: ${notifContext}. TOOLS: [[CMD:LAUNCH:app]], [[CMD:WIFI:toggle]], [[CMD:CLEAR]]. Concise.`;
+                
+                const response = await callGeminiText(userMsg, systemPrompt);
+                let displayMsg = response;
+                let actionLog = null;
+                
+                const cmdRegex = /\[\[CMD:(.*?):?(.*?)\]\]/;
+                const match = response.match(cmdRegex);
+                if (match) {
+                  const [fullTag, cmd, arg] = match;
+                  displayMsg = response.replace(fullTag, '').trim();
+                  if (cmd === 'LAUNCH') { const res = launchNativeApp(arg); actionLog = res.message; }
+                  else if (cmd === 'WIFI') { setWifiEnabled(p => !p); actionLog = "Toggling Uplink..."; }
+                  else if (cmd === 'CLEAR') { setNotifications([]); actionLog = "Buffer Cleared."; }
+                }
+
+                const finalHistory = [...newHistory, { role: 'model', text: displayMsg } as ChatMessage];
+                if (actionLog) finalHistory.push({ role: 'model', text: `>> ${actionLog}`, isSystemAction: true });
+                
+                saveChatToCloud(finalHistory);
+                if (voiceMode && displayMsg) callGeminiTTS(displayMsg);
+              }
+            }}
+            className="flex-1 bg-white/10 border border-white/10 rounded-xl px-4 py-3 text-white text-sm focus:outline-none focus:border-purple-500"
+            placeholder="Message Gemini OS..."
+          />
+        </div>
+      </div>
+    </div>
+  );
 
   // --- RENDER: LOCK SCREEN ---
   const [isUnlocked, setIsUnlocked] = useState(false);
@@ -553,8 +551,8 @@ export default function App() {
               <p className="text-xs text-slate-400 uppercase tracking-widest">System Locked</p>
             </div>
             <div className="space-y-3 w-full">
-              <button onClick={() => { handleAuthTrigger('google'); setTimeout(() => setIsUnlocked(true), 4000); }} disabled={authLoading} className="w-full bg-white text-black py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-3 hover:bg-gray-200 transition-colors disabled:opacity-50">{authLoading ? <Loader2 size={18} className="animate-spin"/> : <Command size={18}/>} Continue with Google</button>
-              <button onClick={() => { handleAuthTrigger('github'); setTimeout(() => setIsUnlocked(true), 4000); }} disabled={authLoading} className="w-full bg-[#24292e] text-white py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-3 hover:bg-[#2f363d] transition-colors disabled:opacity-50 border border-white/10">{authLoading ? <Loader2 size={18} className="animate-spin"/> : <Github size={18}/>} Continue with GitHub</button>
+              <button onClick={() => { handleAuthTrigger(); setTimeout(() => setIsUnlocked(true), 4000); }} disabled={authLoading} className="w-full bg-white text-black py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-3 hover:bg-gray-200 transition-colors disabled:opacity-50">{authLoading ? <Loader2 size={18} className="animate-spin"/> : <Command size={18}/>} Continue with Google</button>
+              <button onClick={() => { handleAuthTrigger(); setTimeout(() => setIsUnlocked(true), 4000); }} disabled={authLoading} className="w-full bg-[#24292e] text-white py-3 rounded-xl font-bold text-sm flex items-center justify-center gap-3 hover:bg-[#2f363d] transition-colors disabled:opacity-50 border border-white/10">{authLoading ? <Loader2 size={18} className="animate-spin"/> : <Github size={18}/>} Continue with GitHub</button>
             </div>
             <div className="text-[10px] text-slate-600 pt-8 flex items-center justify-center gap-2"><Fingerprint size={12}/> Biometric Secured</div>
           </div>
