@@ -383,7 +383,9 @@ export default function App() {
       const track = JSON.parse(meta.replace(/```json|```/g, '').trim()); 
       const art = await callGeminiImage(`Cover for ${track.title} ${track.vibe}`); 
       setCurrentTrack({ ...track, coverArt: art }); 
-    } catch(e) {} 
+    } catch(e) { 
+      console.error('Failed to generate music:', e);
+    } 
     setIsGeneratingMusic(false); 
   };
 
