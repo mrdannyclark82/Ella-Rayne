@@ -5,28 +5,19 @@ import { getFirestore, doc, setDoc, onSnapshot } from 'firebase/firestore';
 import { 
   Terminal, 
   MessageSquare, 
-  Cpu, 
   Cloud, 
   Battery, 
   Settings, 
   Bell, 
-  Shield, 
   Search,
   Grid,
   Wifi,
-  Zap,
-  CheckCircle2,
-  Activity,
   Send,
   Sparkles,
   Volume2,
   VolumeX,
-  Trash2,
   WifiOff,
-  Image as ImageIcon,
-  Paintbrush,
   Loader2,
-  Reply,
   FileCode,
   FolderOpen,
   Plus,
@@ -36,11 +27,9 @@ import {
   Eye,
   Scan,
   Upload,
-  Music,
   Disc,
   Play,
   Mic,
-  HardDrive,
   Lock,
   LogOut,
   Fingerprint,
@@ -48,11 +37,10 @@ import {
   Github,
   Code,
   GitPullRequest,
-  PlayCircle,
   PackagePlus,
-  SkipForward,
   LayoutDashboard,
-  FileText
+  FileText,
+  RefreshCw
 } from 'lucide-react';
 
 // --- CONFIGURATION ---
@@ -253,10 +241,7 @@ export default function App() {
   const [systemLoad, setSystemLoad] = useState(15);
   const [wifiEnabled, setWifiEnabled] = useState(navigator.onLine);
   const [batteryLevel, setBatteryLevel] = useState(100);
-  const [isCharging, setIsCharging] = useState(false);
   const [voiceMode, setVoiceMode] = useState(false);
-  const [processingMode, setProcessingMode] = useState<ProcessingMode>('HYBRID');
-  const [isProcessing, setIsProcessing] = useState(false);
   const [isTilingMode, setIsTilingMode] = useState(false);
 
   // --- FEATURE STATES ---
@@ -282,7 +267,6 @@ export default function App() {
   const [prFeature, setPrFeature] = useState("");
   const [prDraft, setPrDraft] = useState("");
   const [isDraftingPr, setIsDraftingPr] = useState(false);
-  const [workflowStatus, setWorkflowStatus] = useState<'IDLE' | 'RUNNING' | 'SUCCESS' | 'FAILED'>('IDLE');
   const [chatInput, setChatInput] = useState("");
   const [isChatThinking, setIsChatThinking] = useState(false);
   const [isListening, setIsListening] = useState(false);
@@ -381,7 +365,6 @@ export default function App() {
     if ('getBattery' in navigator) {
       (navigator as any).getBattery().then((battery: any) => {
         setBatteryLevel(Math.round(battery.level * 100));
-        setIsCharging(battery.charging);
       });
     }
     return () => clearInterval(timer);
@@ -393,7 +376,7 @@ export default function App() {
 
   // --- AUTH UI HANDLER ---
   // In a real app, this would trigger actual OAuth popup
-  const handleAuthTrigger = async (providerName: string) => {
+  const handleAuthTrigger = async (_providerName: string) => {
     setAuthLoading(true);
     setTimeout(() => {
       setAuthLoading(false);
@@ -532,10 +515,141 @@ export default function App() {
   const handleSearch = async () => { if (!searchQuery) return; setIsSearching(true); const res = await callGeminiText("Generate search results JSON", `User: ${searchQuery}`); try { setSearchResults(JSON.parse(res.replace(/```json|```/g, '').trim())); } catch(e){} setIsSearching(false); };
   const handleAnalyzeRepo = async () => { setIsAnalyzingRepo(true); const res = await callGeminiText(`Analyze ${activeRepo.name}`, "Senior Engineer."); setRepoAnalysis(res); setIsAnalyzingRepo(false); };
   const handleCreatePR = async () => { setIsDraftingPr(true); const res = await callGeminiText(`PR for ${prFeature} in ${activeRepo.name}`, "Engineer."); setPrDraft(res); setIsDraftingPr(false); };
-  const handleRunWorkflow = () => { setWorkflowStatus('RUNNING'); setTimeout(() => setWorkflowStatus('SUCCESS'), 3000); };
   const handleSimulateNotification = () => { const raw = MOCK_NOTIFICATIONS[Math.floor(Math.random()*MOCK_NOTIFICATIONS.length)]; setNotifications(p => [{...raw, id: Date.now().toString(), timestamp: new Date().toISOString(), processed: false}, ...p]); };
   const generateBriefing = async () => { setIsBriefingLoading(true); const res = await callGeminiText(`Stats: Load ${Math.round(systemLoad)}%`, "Greeting."); setSystemBriefing(res); setIsBriefingLoading(false); };
-  const toggleListening = () => { /* ... (impl same as before) ... */ };
+  const toggleListening = () => { setIsListening(p => !p); };
+
+  // --- RENDER HELPERS ---
+  const renderTerminalContent = () => (
+    <div className="flex flex-col h-full bg-black/90 font-mono text-xs p-2 text-green-400">
+      <div className="flex-1 overflow-y-auto space-y-1 p-2 custom-scrollbar">
+        {terminalHistory.map((line, i) => (
+          <div key={i} className={`${line.type === 'input' ? 'text-yellow-400' : 'text-green-400'} whitespace-pre-wrap`}>
+            {line.type === 'input' ? '> ' : ''}{line.content}
+          </div>
+        ))}
+        <div ref={terminalRef} />
+      </div>
+      <div className="flex items-center gap-2 p-2 border-t border-green-900/50 bg-black">
+        <span className="text-green-600">$</span>
+        <input 
+          type="text" 
+          value={terminalInput} 
+          onChange={(e) => setTerminalInput(e.target.value)} 
+          onKeyDown={(e) => e.key === 'Enter' && handleTerminalCommand()}
+          className="flex-1 bg-transparent outline-none text-green-400 placeholder-green-900" 
+          placeholder="Execute command..."
+          autoFocus={activeTab === 'TERMINAL'}
+        />
+      </div>
+    </div>
+  );
+
+  const renderFilesContent = () => (
+    <div className="flex flex-col h-full bg-black/90 backdrop-blur-xl">
+      {editorOpen ? (
+        <div className="flex flex-col h-full animate-in zoom-in-95">
+          <div className="flex justify-between items-center p-2 bg-white/5 border-b border-white/10">
+            <div className="flex items-center gap-2 text-xs text-slate-300">
+              <FileText size={14} className="text-blue-400"/>
+              <input value={editorFilename} onChange={(e) => setEditorFilename(e.target.value)} className="bg-transparent outline-none w-32"/>
+            </div>
+            <div className="flex gap-1">
+              <button onClick={handleAiCodeAssist} disabled={isAiCoding} className="p-1.5 hover:bg-purple-500/20 text-purple-400 rounded transition-colors" title="AI Assist">
+                {isAiCoding ? <Loader2 size={14} className="animate-spin"/> : <Sparkles size={14}/>}
+              </button>
+              <button onClick={handleSmartSave} className="p-1.5 hover:bg-green-500/20 text-green-400 rounded transition-colors" title="Save & Lint">
+                <Save size={14}/>
+              </button>
+              <button onClick={() => setEditorOpen(false)} className="p-1.5 hover:bg-red-500/20 text-red-400 rounded transition-colors" title="Close">
+                <X size={14}/>
+              </button>
+            </div>
+          </div>
+          {lintError && <div className="bg-red-900/50 text-red-200 text-[10px] p-2 border-b border-red-500/30 flex items-center gap-2"><AlertTriangle size={12}/> {lintError}</div>}
+          <textarea 
+            value={editorContent} 
+            onChange={(e) => setEditorContent(e.target.value)} 
+            className="flex-1 bg-[#1e1e1e] text-slate-300 p-4 font-mono text-xs resize-none outline-none custom-scrollbar leading-relaxed"
+            spellCheck={false}
+          />
+        </div>
+      ) : (
+        <div className="p-4 h-full flex flex-col">
+          <div className="flex justify-between items-center mb-4">
+             <h2 className="text-xl font-light text-white flex items-center gap-2"><FolderOpen size={20}/> Filesystem</h2>
+             <div className="flex gap-2">
+               <button onClick={handleScaffold} disabled={isScaffolding} className="p-2 bg-purple-600/20 text-purple-300 rounded-lg hover:bg-purple-600 hover:text-white transition-all">
+                 {isScaffolding ? <Loader2 size={16} className="animate-spin"/> : <PackagePlus size={16}/>}
+               </button>
+               <button onClick={handleNewFile} className="p-2 bg-white/10 rounded-lg hover:bg-white/20 transition-all text-white"><Plus size={16}/></button>
+             </div>
+          </div>
+          <div className="grid grid-cols-3 gap-3 overflow-y-auto content-start flex-1">
+            {files.map(file => (
+              <button key={file.id} onClick={() => handleOpenFile(file)} className="aspect-square bg-white/5 rounded-xl border border-white/10 flex flex-col items-center justify-center gap-2 hover:bg-white/10 transition-all group relative overflow-hidden">
+                <div className={`p-3 rounded-full ${file.language === 'json' ? 'bg-yellow-500/20 text-yellow-400' : 'bg-blue-500/20 text-blue-400'}`}>
+                  <FileCode size={20}/>
+                </div>
+                <span className="text-[10px] text-slate-400 truncate w-full px-2 text-center group-hover:text-white transition-colors">{file.name}</span>
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+
+  const renderChatContent = () => (
+    <div className="flex flex-col h-full bg-transparent">
+       <div className="flex-1 overflow-y-auto space-y-4 p-4 no-scrollbar fade-mask-y">
+         {chatMessages.map((msg, idx) => (
+           <div key={idx} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'} animate-in slide-in-from-bottom-2 duration-300`}>
+             <div className={`max-w-[85%] p-3 rounded-2xl text-xs leading-relaxed shadow-lg ${
+               msg.role === 'user' 
+                 ? 'bg-purple-600 text-white rounded-tr-none' 
+                 : msg.isSystemAction 
+                   ? 'bg-emerald-900/30 text-emerald-400 font-mono border border-emerald-500/30 w-full'
+                   : 'bg-white/10 text-slate-200 backdrop-blur-md border border-white/5 rounded-tl-none'
+             }`}>
+               {msg.role === 'model' && !msg.isSystemAction && <div className="mb-1 opacity-50 text-[9px] uppercase tracking-widest flex items-center gap-1"><Sparkles size={8}/> Gemini Core</div>}
+               {msg.text}
+             </div>
+           </div>
+         ))}
+         {isChatThinking && (
+           <div className="flex justify-start animate-in fade-in">
+             <div className="bg-white/5 p-3 rounded-2xl rounded-tl-none flex gap-1 items-center">
+               <span className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-bounce"/>
+               <span className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-bounce delay-75"/>
+               <span className="w-1.5 h-1.5 bg-purple-400 rounded-full animate-bounce delay-150"/>
+             </div>
+           </div>
+         )}
+         <div ref={chatEndRef} />
+       </div>
+       <div className="p-4 bg-gradient-to-t from-black via-black/90 to-transparent">
+         <div className="bg-white/10 backdrop-blur-xl border border-white/10 rounded-full p-1 pl-4 flex items-center gap-2 shadow-2xl">
+           <input 
+             value={chatInput} 
+             onChange={(e) => setChatInput(e.target.value)} 
+             onKeyDown={(e) => e.key === 'Enter' && handleSendMessage()}
+             placeholder="Message Gemini..." 
+             className="flex-1 bg-transparent outline-none text-white text-xs placeholder-slate-500"
+           />
+           <button onClick={() => setVoiceMode(!voiceMode)} className={`p-2 rounded-full transition-all ${voiceMode ? 'text-emerald-400 bg-emerald-500/20' : 'text-slate-400 hover:bg-white/10'}`}>
+             {voiceMode ? <Volume2 size={16}/> : <VolumeX size={16}/>}
+           </button>
+           <button onClick={toggleListening} className={`p-2 rounded-full transition-all ${isListening ? 'bg-red-500/20 text-red-400 animate-pulse' : 'hover:bg-white/10 text-slate-400'}`}>
+             <Mic size={16}/>
+           </button>
+           <button onClick={handleSendMessage} disabled={!chatInput.trim() || isChatThinking} className="p-2 bg-purple-600 rounded-full text-white shadow-lg hover:bg-purple-500 transition-all disabled:opacity-50 disabled:scale-95">
+             <Send size={16}/>
+           </button>
+         </div>
+       </div>
+    </div>
+  );
 
   // --- RENDER: LOCK SCREEN ---
   const [isUnlocked, setIsUnlocked] = useState(false);
@@ -706,7 +820,22 @@ export default function App() {
                       </div>
                     </div>
                   )}
-                  {activeTab === 'SEARCH' && <div className="text-center"><Search size={48} className="mx-auto mb-4 opacity-50"/><p>Universal Search Module</p><input value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} onKeyDown={e=>e.key==='Enter' && handleSearch()} placeholder="Query..." className="mt-4 bg-white/10 border border-white/10 rounded px-4 py-2 text-white w-64"/></div>}
+                  {activeTab === 'SEARCH' && (
+                    <div className="text-center w-full px-4">
+                      <Search size={48} className="mx-auto mb-4 opacity-50"/>
+                      <p>Universal Search Module</p>
+                      <input value={searchQuery} onChange={e=>setSearchQuery(e.target.value)} onKeyDown={e=>e.key==='Enter' && handleSearch()} placeholder="Query..." className="mt-4 bg-white/10 border border-white/10 rounded px-4 py-2 text-white w-full max-w-xs"/>
+                      {isSearching && <Loader2 size={24} className="animate-spin mx-auto mt-4 text-purple-400"/>}
+                      <div className="mt-4 space-y-2 max-h-60 overflow-y-auto">
+                        {searchResults.map((res, i) => (
+                          <div key={i} className="bg-white/5 p-2 rounded text-left border border-white/5">
+                            <div className="text-xs font-bold text-white">{res.title}</div>
+                            <div className="text-[10px] text-slate-400">{res.subtitle}</div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
                   {activeTab === 'VISION' && (
                     <div className="flex flex-col items-center w-full p-6">
                       <div className="border-2 border-dashed border-white/20 rounded-2xl w-full h-64 flex items-center justify-center mb-4 relative overflow-hidden">
